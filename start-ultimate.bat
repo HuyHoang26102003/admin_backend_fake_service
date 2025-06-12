@@ -1,9 +1,10 @@
 @echo off
-echo 🚀 STARTING ULTIMATE GENERATOR...
-echo 🔥 ONE-HIT KO SOLUTION
-echo 💪 WILL MAKE YOU PROUD!
+echo Starting FlashFood Database Population...
+echo ===============================================
 echo.
-echo Press Ctrl+C to stop the generator
+echo Phase 1: Testing current database state...
+node test-structured-approach.js
 echo.
-node ultimate-generator.js
+echo Phase 2: Running structured population...
+node structured-database-populator.js
 pause 

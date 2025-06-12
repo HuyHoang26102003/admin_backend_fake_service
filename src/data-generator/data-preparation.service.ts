@@ -4,14 +4,18 @@ import { faker } from '@faker-js/faker';
 import { firstValueFrom } from 'rxjs';
 
 interface DataCollection {
-  customers: any[];
-  restaurants: any[];
   addresses: any[];
+  categories: any[];
+  admins: any[];
+  financeRules: any[];
+  restaurants: any[];
   menuItems: any[];
   variants: any[];
-  drivers: any[];
   promotions: any[];
-  categories: any[];
+  drivers: any[];
+  customers: any[];
+  customerCares: any[];
+  orders: any[];
 }
 
 @Injectable()
@@ -37,41 +41,40 @@ export class DataPreparationService {
     this.logger.log(' Starting comprehensive data preparation process...');
 
     try {
-      // Step 1: Create independent entities first
-      this.logger.log(' Step 1: Creating independent entities...');
-
-      const users = await this.ensureMinimumRecords('users', () =>
-        this.generateUser()
-      );
-
-      // Step 2: Create address books
-      this.logger.log(' Step 2: Creating address books...');
+      // Step 1: Create address books (first - no dependencies)
+      this.logger.log(' Step 1: Creating address books...');
       const addresses = await this.ensureMinimumRecords('address_books', () =>
         this.generateAddressBook()
       );
 
-      // Step 3: Create food categories
-      this.logger.log(' Step 3: Creating food categories...');
+      // Step 2: Create food categories (second - no dependencies)
+      this.logger.log(' Step 2: Creating food categories...');
       const categories = await this.ensureMinimumRecords(
         'food-categories',
         () => this.generateFoodCategory()
       );
 
-      // Step 4: Create customers (needs users, can reference addresses)
-      this.logger.log(' Step 4: Creating customers...');
-      const customers = await this.ensureMinimumCustomers(users, addresses);
+      // Step 3: Create admins with proper hierarchy (super admin first)
+      this.logger.log(' Step 3: Creating admins with hierarchy...');
+      const admins = await this.ensureMinimumAdminsWithHierarchy();
 
-      // Step 5: Create restaurants (needs users + addresses + categories)
-      this.logger.log(' Step 5: Creating restaurants...');
+      // Step 4: Create finance rules (needs super admin)
+      this.logger.log(' Step 4: Creating finance rules...');
+      const financeRules = await this.ensureMinimumFinanceRules(admins);
+
+      // Step 5: Create users for other entities
+      this.logger.log(' Step 5: Creating users...');
+      const users = await this.ensureMinimumRecords('users', () =>
+        this.generateUser()
+      );
+
+      // Step 6: Create restaurants (needs users + addresses + categories)
+      this.logger.log(' Step 6: Creating restaurants...');
       const restaurants = await this.ensureMinimumRestaurants(
         users,
         addresses,
         categories
       );
-
-      // Step 6: Create drivers (needs users)
-      this.logger.log(' Step 6: Creating drivers...');
-      const drivers = await this.ensureMinimumDrivers(users);
 
       // Step 7: Create menu items (needs restaurants + categories)
       this.logger.log(' Step 7: Creating menu items...');
@@ -80,23 +83,48 @@ export class DataPreparationService {
         categories
       );
 
-      // Step 8: Create variants (needs menu items)
+      // Step 8: Create menu item variants (needs menu items)
       this.logger.log(' Step 8: Creating menu item variants...');
       const variants = await this.ensureMinimumVariants(menuItems);
 
-      // Step 9: Create promotions (can reference categories)
+      // Step 9: Create promotions (needs categories)
       this.logger.log(' Step 9: Creating promotions...');
       const promotions = await this.ensureMinimumPromotions(categories);
 
-      const dataCollection: DataCollection = {
+      // Step 10: Create drivers (needs users)
+      this.logger.log(' Step 10: Creating drivers...');
+      const drivers = await this.ensureMinimumDrivers(users);
+
+      // Step 11: Create customers (needs users, can reference addresses)
+      this.logger.log(' Step 11: Creating customers...');
+      const customers = await this.ensureMinimumCustomers(users, addresses);
+
+      // Step 12: Create customer care (needs users)
+      this.logger.log(' Step 12: Creating customer care...');
+      const customerCares = await this.ensureMinimumCustomerCares(users);
+
+      // Step 13: Create orders (needs customers + restaurants + drivers + addresses)
+      this.logger.log(' Step 13: Creating orders...');
+      const orders = await this.ensureMinimumOrders(
         customers,
         restaurants,
         drivers,
+        addresses
+      );
+
+      const dataCollection: DataCollection = {
         addresses,
+        categories,
+        admins,
+        financeRules,
+        restaurants,
         menuItems,
         variants,
         promotions,
-        categories
+        drivers,
+        customers,
+        customerCares,
+        orders
       };
 
       // Cache the result
@@ -105,15 +133,19 @@ export class DataPreparationService {
 
       this.logger.log(' Data preparation completed successfully!');
       this.logger.log(' Data Collection Summary:');
-      this.logger.log(` Users: ${users.length}`);
       this.logger.log(` Addresses: ${addresses.length}`);
       this.logger.log(` Categories: ${categories.length}`);
-      this.logger.log(` Customers: ${customers.length}`);
+      this.logger.log(` Admins: ${admins.length}`);
+      this.logger.log(` Finance Rules: ${financeRules.length}`);
+      this.logger.log(` Users: ${users.length}`);
       this.logger.log(` Restaurants: ${restaurants.length}`);
-      this.logger.log(` Drivers: ${drivers.length}`);
       this.logger.log(` Menu Items: ${menuItems.length}`);
       this.logger.log(` Variants: ${variants.length}`);
       this.logger.log(` Promotions: ${promotions.length}`);
+      this.logger.log(` Drivers: ${drivers.length}`);
+      this.logger.log(` Customers: ${customers.length}`);
+      this.logger.log(` Customer Care: ${customerCares.length}`);
+      this.logger.log(` Orders: ${orders.length}`);
 
       return dataCollection;
     } catch (error) {
@@ -523,9 +555,9 @@ export class DataPreparationService {
       city: faker.location.city(), // Required string
       nationality: faker.location.country(), // Required string
       is_default: Math.random() > 0.7, // Optional boolean
-      created_at: Math.floor(Date.now() / 1000), // Integer unix timestamp
-      updated_at: Math.floor(Date.now() / 1000), // Integer unix timestamp
-      postal_code: String(faker.number.int({ min: 10000, max: 99999 })), // String postal code
+      created_at: Math.floor(Date.now() / 1000), // Required by DTO
+      updated_at: Math.floor(Date.now() / 1000), // Required by DTO
+      postal_code: faker.number.int({ min: 10000, max: 99999 }), // Number postal code
       location: {
         // Location object
         lat: faker.location.latitude(),
@@ -762,27 +794,222 @@ export class DataPreparationService {
     const endDate = startDate + 30 * 24 * 60 * 60; // 30 days from now
 
     return {
-      title: faker.commerce.productAdjective() + ' Deal',
+      name: faker.commerce.productAdjective() + ' Deal', // Changed from title to name
       description: faker.lorem.sentence(),
-      discount_type: faker.helpers.arrayElement(['PERCENTAGE', 'FIXED']),
+      discount_type: faker.helpers.arrayElement([
+        'PERCENTAGE',
+        'FIXED',
+        'BOGO'
+      ]), // Added BOGO
       discount_value: faker.number.float({ min: 5, max: 50 }),
+      promotion_cost_price: parseFloat(
+        faker.commerce.price({ min: 10, max: 50 })
+      ), // Required field
       minimum_order_value: parseFloat(
         faker.commerce.price({ min: 50, max: 200 })
       ),
-      maximum_discount_amount: parseFloat(
-        faker.commerce.price({ min: 20, max: 100 })
-      ),
-      usage_limit: faker.number.int({ min: 100, max: 1000 }),
-      usage_count: 0,
       start_date: startDate,
       end_date: endDate,
       status: 'ACTIVE',
       food_category_ids: faker.helpers.arrayElements(
         categories.map(c => c.id),
-        faker.number.int({ min: 1, max: 3 })
+        faker.number.int({ min: 1, max: Math.min(3, categories.length) })
       ),
-      created_at: Math.floor(Date.now() / 1000),
-      updated_at: Math.floor(Date.now() / 1000)
+      avatar:
+        Math.random() > 0.5
+          ? {
+              url: faker.image.url(),
+              key: faker.string.uuid()
+            }
+          : undefined
+    };
+  }
+
+  private generateAdminUser(): any {
+    // Generate a user specifically for admin roles
+    return {
+      first_name: faker.person.firstName(),
+      last_name: faker.person.lastName(),
+      email: faker.internet.email(),
+      password: faker.internet.password({ length: 8 }),
+      phone: faker.phone.number(),
+      user_type: ['SUPER_ADMIN'], // Default to SUPER_ADMIN user type
+      address: [],
+      avatar:
+        Math.random() > 0.3
+          ? {
+              url: faker.image.avatar(),
+              key: faker.string.uuid()
+            }
+          : undefined,
+      is_verified: true // Admins should be verified
+    };
+  }
+
+  private generateAdmin(user: any, role: string, createdById?: string): any {
+    // Define permissions based on role
+    const rolePermissions = {
+      SUPER_ADMIN: [
+        'MANAGE_USERS',
+        'MANAGE_RESTAURANTS',
+        'MANAGE_ORDERS',
+        'MANAGE_PROMOTIONS',
+        'MANAGE_PAYMENTS',
+        'MANAGE_SUPPORT',
+        'MANAGE_DRIVERS',
+        'BAN_ACCOUNTS',
+        'VIEW_ANALYTICS',
+        'MANAGE_ADMINS'
+      ],
+      FINANCE_ADMIN: ['MANAGE_PAYMENTS', 'MANAGE_PROMOTIONS', 'VIEW_ANALYTICS'],
+      COMPANION_ADMIN: [
+        'MANAGE_RESTAURANTS',
+        'MANAGE_DRIVERS',
+        'MANAGE_SUPPORT',
+        'VIEW_ANALYTICS'
+      ]
+    };
+
+    return {
+      user_id: user.id,
+      role: role,
+      permissions: rolePermissions[role] || [],
+      first_name: user.first_name,
+      last_name: user.last_name,
+      avatar:
+        Math.random() > 0.3
+          ? {
+              url: faker.image.avatar(),
+              key: faker.string.uuid()
+            }
+          : undefined,
+      status: 'ACTIVE',
+      assigned_restaurants: [],
+      assigned_drivers: [],
+      assigned_customer_care: [],
+      created_by_id: createdById || null
+    };
+  }
+
+  private generateFinanceRule(createdById: string): any {
+    return {
+      driver_fixed_wage: {
+        '0-1km': faker.number.float({ min: 5, max: 10 }),
+        '1-2km': faker.number.float({ min: 8, max: 15 }),
+        '2-3km': faker.number.float({ min: 12, max: 20 }),
+        '4-5km': faker.number.float({ min: 18, max: 25 }),
+        '>5km': 'negotiable'
+      },
+      customer_care_hourly_wage: faker.number.float({ min: 15, max: 25 }),
+      app_service_fee: faker.number.float({ min: 2, max: 5 }),
+      restaurant_commission: faker.number.float({ min: 8, max: 15 }),
+      created_by_id: createdById,
+      description: faker.lorem.sentence()
+    };
+  }
+
+  private generateCustomerCareUser(): any {
+    return {
+      first_name: faker.person.firstName(),
+      last_name: faker.person.lastName(),
+      email: faker.internet.email(),
+      password: faker.internet.password({ length: 8 }),
+      phone: faker.phone.number(),
+      user_type: ['CUSTOMER_CARE_REPRESENTATIVE'],
+      address: [],
+      avatar:
+        Math.random() > 0.3
+          ? {
+              url: faker.image.avatar(),
+              key: faker.string.uuid()
+            }
+          : undefined,
+      is_verified: true
+    };
+  }
+
+  private generateCustomerCare(user: any): any {
+    return {
+      user_id: user.id,
+      first_name: user.first_name,
+      last_name: user.last_name,
+      contact_email: [
+        {
+          title: 'Primary',
+          is_default: true,
+          email: user.email
+        }
+      ],
+      contact_phone: [
+        {
+          title: 'Primary',
+          is_default: true,
+          number: user.phone
+        }
+      ],
+      assigned_tickets: [],
+      available_for_work: Math.random() > 0.3,
+      is_assigned: false,
+      last_login: Math.floor(Date.now() / 1000)
+    };
+  }
+
+  private generateOrder(
+    customer: any,
+    restaurant: any,
+    driver: any,
+    customerAddress: any,
+    restaurantAddress: any
+  ): any {
+    const orderItems = [
+      {
+        menu_item_id: faker.string.uuid(),
+        quantity: faker.number.int({ min: 1, max: 3 }),
+        price: parseFloat(faker.commerce.price({ min: 10, max: 50 })),
+        special_instructions:
+          Math.random() > 0.5 ? faker.lorem.sentence() : undefined
+      }
+    ];
+
+    const subtotal = orderItems.reduce(
+      (sum, item) => sum + item.price * item.quantity,
+      0
+    );
+    const deliveryFee = faker.number.float({ min: 2, max: 8 });
+    const serviceFee = subtotal * 0.1;
+    const totalAmount = subtotal + deliveryFee + serviceFee;
+
+    return {
+      customer_id: customer.id,
+      restaurant_id: restaurant.id,
+      driver_id: driver.id,
+      customer_location_id: customerAddress.id,
+      restaurant_location_id: restaurantAddress.id,
+      order_items: orderItems,
+      subtotal: subtotal,
+      delivery_fee: deliveryFee,
+      service_fee: serviceFee,
+      total_amount: totalAmount,
+      payment_method: faker.helpers.arrayElement([
+        'CASH',
+        'CARD',
+        'DIGITAL_WALLET'
+      ]),
+      payment_status: faker.helpers.arrayElement(['PENDING', 'PAID', 'FAILED']),
+      tracking_info: faker.helpers.arrayElement([
+        'ORDER_PLACED',
+        'ORDER_RECEIVED',
+        'PREPARING',
+        'IN_PROGRESS',
+        'DISPATCHED',
+        'EN_ROUTE',
+        'DELIVERED'
+      ]),
+      special_instructions:
+        Math.random() > 0.5 ? faker.lorem.sentence() : undefined,
+      estimated_delivery_time:
+        Math.floor(Date.now() / 1000) +
+        faker.number.int({ min: 1800, max: 3600 })
     };
   }
 
@@ -792,14 +1019,18 @@ export class DataPreparationService {
 
   private logDataSummary(data: DataCollection): void {
     this.logger.log(' Data Collection Summary:');
-    this.logger.log(` Customers: ${data.customers.length}`);
-    this.logger.log(` Restaurants: ${data.restaurants.length}`);
-    this.logger.log(` Drivers: ${data.drivers.length}`);
     this.logger.log(` Addresses: ${data.addresses.length}`);
+    this.logger.log(` Categories: ${data.categories.length}`);
+    this.logger.log(` Admins: ${data.admins.length}`);
+    this.logger.log(` Finance Rules: ${data.financeRules.length}`);
+    this.logger.log(` Restaurants: ${data.restaurants.length}`);
     this.logger.log(` Menu Items: ${data.menuItems.length}`);
     this.logger.log(` Variants: ${data.variants.length}`);
     this.logger.log(` Promotions: ${data.promotions.length}`);
-    this.logger.log(` Categories: ${data.categories.length}`);
+    this.logger.log(` Drivers: ${data.drivers.length}`);
+    this.logger.log(` Customers: ${data.customers.length}`);
+    this.logger.log(` Customer Care: ${data.customerCares.length}`);
+    this.logger.log(` Orders: ${data.orders.length}`);
   }
 
   // Public method to get cached data without regeneration
@@ -1091,6 +1322,408 @@ export class DataPreparationService {
       return finalDrivers;
     } catch (error) {
       this.logger.error('❌ Error ensuring drivers:', error.message);
+      return [];
+    }
+  }
+
+  private async ensureMinimumAdminsWithHierarchy(): Promise<any[]> {
+    this.logger.log(' Checking admins with hierarchy...');
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get('http://localhost:1310/admin-fake')
+      );
+
+      const apiResponse = response.data;
+      if (apiResponse.EC !== 0) {
+        this.logger.error(`API Error for admins: ${apiResponse.EM}`);
+        return [];
+      }
+
+      const existingAdmins = apiResponse.data || [];
+      this.logger.log(`Found ${existingAdmins.length} existing admins`);
+
+      let allAdmins = [...existingAdmins];
+      let superAdmin = existingAdmins.find(
+        admin => admin.role === 'SUPER_ADMIN'
+      );
+
+      // Step 1: Ensure Super Admin exists (created first)
+      if (!superAdmin) {
+        this.logger.log(' Creating Super Admin...');
+        superAdmin = await this.createAdminWithUser('SUPER_ADMIN');
+        if (superAdmin) {
+          allAdmins.push(superAdmin);
+        }
+      }
+
+      // Step 2: Create other admins using super admin as creator
+      const otherAdminTypes = [
+        { role: 'FINANCE_ADMIN', needed: 2 },
+        { role: 'COMPANION_ADMIN', needed: 2 }
+      ];
+
+      for (const adminType of otherAdminTypes) {
+        const existingCount = allAdmins.filter(
+          admin => admin.role === adminType.role
+        ).length;
+        const needToCreate = Math.max(0, adminType.needed - existingCount);
+
+        if (needToCreate > 0) {
+          this.logger.log(
+            ` Creating ${needToCreate} ${adminType.role} admin(s) by Super Admin...`
+          );
+
+          for (let i = 0; i < needToCreate; i++) {
+            const newAdmin = await this.createAdminWithUser(
+              adminType.role,
+              superAdmin?.id
+            );
+            if (newAdmin) {
+              allAdmins.push(newAdmin);
+            }
+            await this.delay(200);
+          }
+        }
+      }
+
+      this.logger.log(` Admins now has ${allAdmins.length} records`);
+      return allAdmins;
+    } catch (error) {
+      this.logger.error(
+        '❌ Error ensuring admins with hierarchy:',
+        error.message
+      );
+      return [];
+    }
+  }
+
+  private async createAdminWithUser(
+    role: string,
+    createdById?: string
+  ): Promise<any> {
+    try {
+      // Create user first
+      const adminUser = this.generateAdminUser();
+      adminUser.user_type = [role];
+
+      const userResponse = await firstValueFrom(
+        this.httpService.post('http://localhost:1310/users', adminUser)
+      );
+
+      const userApiResponse = userResponse.data;
+      if (userApiResponse.EC !== 0) {
+        this.logger.warn(
+          `Failed to create user for ${role}: ${userApiResponse.EM}`
+        );
+        return null;
+      }
+
+      const createdUser = userApiResponse.data;
+      console.log(
+        'checkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk whaty here,',
+        createdUser,
+        userApiResponse
+      );
+      this.logger.log(
+        `✅ Created user for ${role}: ${createdUser.first_name} ${createdUser.last_name}`
+      );
+
+      // Create admin
+      const adminData = this.generateAdmin(createdUser, role, createdById);
+
+      const createResponse = await firstValueFrom(
+        this.httpService.post('http://localhost:1310/admin-fake', adminData)
+      );
+
+      const createApiResponse = createResponse.data;
+      if (createApiResponse.EC === 0) {
+        this.logger.log(
+          `✅ Created ${role}: ${adminData.first_name} ${adminData.last_name}`
+        );
+        return createApiResponse.data;
+      } else {
+        this.logger.warn(`Failed to create ${role}: ${createApiResponse.EM}`);
+        return null;
+      }
+    } catch (error) {
+      this.logger.warn(`Failed to create ${role}: ${error.message}`);
+      return null;
+    }
+  }
+
+  private async ensureMinimumFinanceRules(admins: any[]): Promise<any[]> {
+    this.logger.log(' Checking finance rules...');
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get('http://localhost:1310/finance-rules')
+      );
+
+      const apiResponse = response.data;
+      if (apiResponse.EC !== 0) {
+        this.logger.error(`API Error for finance rules: ${apiResponse.EM}`);
+        return [];
+      }
+
+      const existingRules = apiResponse.data || [];
+      this.logger.log(`Found ${existingRules.length} existing finance rules`);
+
+      const needed = Math.max(0, 3 - existingRules.length); // Need at least 3 finance rules
+
+      if (needed === 0) {
+        return existingRules;
+      }
+
+      // Find super admin to create rules
+      const superAdmin = admins.find(admin => admin.role === 'SUPER_ADMIN');
+      if (!superAdmin) {
+        this.logger.warn(
+          'Cannot create finance rules: no super admin available'
+        );
+        return existingRules;
+      }
+
+      this.logger.log(` Generating ${needed} additional finance rules...`);
+
+      for (let i = 0; i < needed; i++) {
+        try {
+          const ruleData = this.generateFinanceRule(superAdmin.id);
+
+          const createResponse = await firstValueFrom(
+            this.httpService.post(
+              'http://localhost:1310/finance-rules',
+              ruleData
+            )
+          );
+
+          const createApiResponse = createResponse.data;
+          if (createApiResponse.EC === 0) {
+            this.logger.log(`✅ Created finance rule ${i + 1}/${needed}`);
+          } else {
+            this.logger.warn(
+              `Failed to create finance rule ${i + 1}/${needed}: ${createApiResponse.EM}`
+            );
+          }
+
+          await this.delay(100);
+        } catch (error) {
+          this.logger.warn(`Failed to create finance rule: ${error.message}`);
+        }
+      }
+
+      // Fetch updated list
+      const updatedResponse = await firstValueFrom(
+        this.httpService.get('http://localhost:1310/finance-rules')
+      );
+
+      const updatedApiResponse = updatedResponse.data;
+      if (updatedApiResponse.EC !== 0) {
+        this.logger.error(
+          `API Error fetching updated finance rules: ${updatedApiResponse.EM}`
+        );
+        return existingRules;
+      }
+
+      const finalRules = updatedApiResponse.data || [];
+      this.logger.log(` Finance rules now has ${finalRules.length} records`);
+      return finalRules;
+    } catch (error) {
+      this.logger.error('❌ Error ensuring finance rules:', error.message);
+      return [];
+    }
+  }
+
+  private async ensureMinimumCustomerCares(users: any[]): Promise<any[]> {
+    this.logger.log(' Checking customer care...');
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get('http://localhost:1310/customer-care')
+      );
+
+      const apiResponse = response.data;
+      if (apiResponse.EC !== 0) {
+        this.logger.error(`API Error for customer care: ${apiResponse.EM}`);
+        return [];
+      }
+
+      const existingCares = apiResponse.data || [];
+      this.logger.log(`Found ${existingCares.length} existing customer care`);
+
+      const needed = Math.max(0, this.MIN_RECORDS - existingCares.length);
+
+      if (needed === 0) {
+        return existingCares;
+      }
+
+      this.logger.log(` Generating ${needed} additional customer care...`);
+
+      for (let i = 0; i < needed; i++) {
+        try {
+          // Create user first for customer care
+          const careUser = this.generateCustomerCareUser();
+
+          const userResponse = await firstValueFrom(
+            this.httpService.post('http://localhost:1310/users', careUser)
+          );
+
+          const userApiResponse = userResponse.data;
+          if (userApiResponse.EC !== 0) {
+            this.logger.warn(
+              `Failed to create user for customer care: ${userApiResponse.EM}`
+            );
+            continue;
+          }
+
+          const createdUser = userApiResponse.data;
+          this.logger.log(
+            `✅ Created user for customer care: ${createdUser.first_name} ${createdUser.last_name}`
+          );
+
+          // Create customer care
+          const careData = this.generateCustomerCare(createdUser);
+
+          const createResponse = await firstValueFrom(
+            this.httpService.post(
+              'http://localhost:1310/customer-care',
+              careData
+            )
+          );
+
+          const createApiResponse = createResponse.data;
+          if (createApiResponse.EC === 0) {
+            this.logger.log(
+              `✅ Created customer care ${i + 1}/${needed}: ${careData.first_name} ${careData.last_name}`
+            );
+          } else {
+            this.logger.warn(
+              `Failed to create customer care ${i + 1}/${needed}: ${createApiResponse.EM}`
+            );
+          }
+
+          await this.delay(200);
+        } catch (error) {
+          this.logger.warn(`Failed to create customer care: ${error.message}`);
+        }
+      }
+
+      // Fetch updated list
+      const updatedResponse = await firstValueFrom(
+        this.httpService.get('http://localhost:1310/customer-care')
+      );
+
+      const updatedApiResponse = updatedResponse.data;
+      if (updatedApiResponse.EC !== 0) {
+        this.logger.error(
+          `API Error fetching updated customer care: ${updatedApiResponse.EM}`
+        );
+        return existingCares;
+      }
+
+      const finalCares = updatedApiResponse.data || [];
+      this.logger.log(` Customer care now has ${finalCares.length} records`);
+      return finalCares;
+    } catch (error) {
+      this.logger.error('❌ Error ensuring customer care:', error.message);
+      return [];
+    }
+  }
+
+  private async ensureMinimumOrders(
+    customers: any[],
+    restaurants: any[],
+    drivers: any[],
+    addresses: any[]
+  ): Promise<any[]> {
+    this.logger.log(' Checking orders...');
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get('http://localhost:1310/orders')
+      );
+
+      const apiResponse = response.data;
+      if (apiResponse.EC !== 0) {
+        this.logger.error(`API Error for orders: ${apiResponse.EM}`);
+        return [];
+      }
+
+      const existingOrders = apiResponse.data || [];
+      this.logger.log(`Found ${existingOrders.length} existing orders`);
+
+      const needed = Math.max(0, this.MIN_RECORDS - existingOrders.length);
+
+      if (needed === 0) {
+        return existingOrders;
+      }
+
+      // Only generate orders if we have all dependencies
+      if (
+        customers.length === 0 ||
+        restaurants.length === 0 ||
+        drivers.length === 0 ||
+        addresses.length === 0
+      ) {
+        this.logger.warn('Cannot generate orders: missing dependencies');
+        return existingOrders;
+      }
+
+      this.logger.log(` Generating ${needed} additional orders...`);
+
+      for (let i = 0; i < needed; i++) {
+        try {
+          const customer = faker.helpers.arrayElement(customers);
+          const restaurant = faker.helpers.arrayElement(restaurants);
+          const driver = faker.helpers.arrayElement(drivers);
+          const customerAddress = faker.helpers.arrayElement(addresses);
+          const restaurantAddress = faker.helpers.arrayElement(addresses);
+
+          const orderData = this.generateOrder(
+            customer,
+            restaurant,
+            driver,
+            customerAddress,
+            restaurantAddress
+          );
+
+          const createResponse = await firstValueFrom(
+            this.httpService.post('http://localhost:1310/orders', orderData)
+          );
+
+          const createApiResponse = createResponse.data;
+          if (createApiResponse.EC === 0) {
+            this.logger.log(`✅ Created order ${i + 1}/${needed}`);
+          } else {
+            this.logger.warn(
+              `Failed to create order ${i + 1}/${needed}: ${createApiResponse.EM}`
+            );
+          }
+
+          await this.delay(100);
+        } catch (error) {
+          this.logger.warn(`Failed to create order: ${error.message}`);
+        }
+      }
+
+      // Fetch updated list
+      const updatedResponse = await firstValueFrom(
+        this.httpService.get('http://localhost:1310/orders')
+      );
+
+      const updatedApiResponse = updatedResponse.data;
+      if (updatedApiResponse.EC !== 0) {
+        this.logger.error(
+          `API Error fetching updated orders: ${updatedApiResponse.EM}`
+        );
+        return existingOrders;
+      }
+
+      const finalOrders = updatedApiResponse.data || [];
+      this.logger.log(` Orders now has ${finalOrders.length} records`);
+      return finalOrders;
+    } catch (error) {
+      this.logger.error('❌ Error ensuring orders:', error.message);
       return [];
     }
   }
