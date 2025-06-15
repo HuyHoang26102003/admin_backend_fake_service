@@ -3,13 +3,14 @@ const { faker } = require('@faker-js/faker');
 
 class StructuredDatabasePopulator {
   constructor() {
-    this.baseURL = 'http://localhost:1310';
+    this.baseURL = 'http://127.0.0.1:1310';
     this.createdData = {
       addressBooks: [],
       foodCategories: [],
       superAdmin: null,
       financeAdmins: [],
       companionAdmins: [],
+      customerCares: [],
       financeRules: [],
       restaurants: [],
       menuItems: [],
@@ -17,8 +18,15 @@ class StructuredDatabasePopulator {
       promotions: [],
       drivers: [],
       customers: [],
-      customerCares: [],
       orders: []
+    };
+    
+    // Store credentials for testing sign-in
+    this.adminCredentials = {
+      superAdmin: null,
+      financeAdmins: [],
+      companionAdmins: [],
+      customerCares: []
     };
   }
 
@@ -140,164 +148,122 @@ class StructuredDatabasePopulator {
     await this.verifyTableData('food-categories', 'Food Categories', true);
   }
 
-  // Step 3: Admin Hierarchy (Super Admin -> Finance Admin -> Companion Admin)
+  // Step 3: Admin Hierarchy using REGISTRATION endpoints
   async createAdminHierarchy() {
-    console.log('\n👑 STEP 3: Creating Admin Hierarchy...');
-    
-    // First ensure we have users for admins
-    const users = await this.verifyTableData('users', 'Users', true);
-    const adminUsers = users.filter(user => 
-      user.user_type && (
-        user.user_type.includes('SUPER_ADMIN') || 
-        user.user_type.includes('FINANCE_ADMIN') || 
-        user.user_type.includes('COMPANION_ADMIN') ||
-        user.user_type.includes('ADMIN')
-      )
-    );
-
-    if (adminUsers.length === 0) {
-      console.log('❌ CRITICAL: No admin users found!');
-      console.log('🛑 STOPPING - Cannot create admins without admin users');
-      process.exit(1);
-    }
+    console.log('\n👑 STEP 3: Creating Admin Hierarchy using PROPER REGISTRATION...');
 
     // Step 3a: Super Admin
-    console.log('\n👑 STEP 3a: Creating Super Admin...');
+    console.log('\n👑 STEP 3a: Creating Super Admin (SIGNABLE ACCOUNT)...');
     const existingAdmins = await this.verifyTableData('admin-fake', 'Admins', false);
     const superAdmin = existingAdmins.find(admin => admin.role === 'SUPER_ADMIN');
     
     if (!superAdmin) {
-      const superAdminUser = adminUsers.find(user => user.user_type.includes('SUPER_ADMIN')) || adminUsers[0];
       const superAdminData = {
-        user_id: superAdminUser.id,
-        role: 'SUPER_ADMIN',
-        permissions: [
-          'MANAGE_USERS', 'MANAGE_RESTAURANTS', 'MANAGE_ORDERS', 
-          'MANAGE_PROMOTIONS', 'MANAGE_PAYMENTS', 'MANAGE_SUPPORT',
-          'MANAGE_DRIVERS', 'BAN_ACCOUNTS', 'VIEW_ANALYTICS', 'MANAGE_ADMINS'
-        ],
-        first_name: superAdminUser.first_name,
-        last_name: superAdminUser.last_name,
-        status: 'ACTIVE',
-        assigned_restaurants: [],
-        assigned_drivers: [],
-        assigned_customer_care: []
+        email: `superadmin_${Date.now()}@flashfood.com`,
+        password: 'Admin123!',
+        first_name: 'Super',
+        last_name: 'Admin',
+        phone: faker.phone.number()
       };
 
       try {
-        console.log(`🔄 Attempting to create Super Admin with data:`, JSON.stringify(superAdminData, null, 2));
-        const response = await axios.post(`${this.baseURL}/admin-fake`, superAdminData);
-        console.log(`📋 Admin creation response:`, JSON.stringify(response.data, null, 2));
+        console.log(`🔄 Registering Super Admin: ${superAdminData.email}`);
+        const response = await axios.post(`${this.baseURL}/auth/register-super-admin`, superAdminData);
         
         if (response.data.EC === 0 || response.data.EC === 'OK') {
-          console.log(`✅ Created Super Admin: ${superAdminUser.first_name} ${superAdminUser.last_name}`);
-          this.createdData.superAdmin = response.data.data;
+          console.log(`✅ Registered Super Admin: ${superAdminData.first_name} ${superAdminData.last_name}`);
+          console.log(`🔐 Email: ${superAdminData.email} | Password: ${superAdminData.password}`);
+          this.adminCredentials.superAdmin = {
+            email: superAdminData.email,
+            password: superAdminData.password,
+            role: 'SUPER_ADMIN'
+          };
         } else {
-          console.log(`❌ Failed to create Super Admin: ${response.data.EM}`);
-          console.log(`❌ Full response:`, JSON.stringify(response.data, null, 2));
+          console.log(`❌ Failed to register Super Admin: ${response.data.EM}`);
           process.exit(1);
         }
       } catch (error) {
-        console.log(`❌ Error creating Super Admin: ${error.response?.data?.EM || error.message}`);
-        if (error.response?.data) {
-          console.log(`❌ Full error response:`, JSON.stringify(error.response.data, null, 2));
-        }
+        console.log(`❌ Error registering Super Admin: ${error.response?.data?.EM || error.message}`);
         process.exit(1);
       }
     } else {
       console.log(`✅ Super Admin already exists: ${superAdmin.first_name} ${superAdmin.last_name}`);
-      this.createdData.superAdmin = superAdmin;
     }
 
-    // Verify Super Admin exists
-    const verifiedAdmins = await this.verifyTableData('admin-fake', 'Admins', true);
-    const verifiedSuperAdmin = verifiedAdmins.find(admin => admin.role === 'SUPER_ADMIN');
-    if (!verifiedSuperAdmin) {
-      console.log('❌ CRITICAL: Super Admin not found after creation!');
-      process.exit(1);
-    }
+    await this.delay(1000); // Wait for email processing
 
     // Step 3b: Finance Admins
-    console.log('\n💰 STEP 3b: Creating Finance Admins...');
+    console.log('\n💰 STEP 3b: Creating Finance Admins (SIGNABLE ACCOUNTS)...');
+    const verifiedAdmins = await this.verifyTableData('admin-fake', 'Admins', true);
     const financeAdmins = verifiedAdmins.filter(admin => admin.role === 'FINANCE_ADMIN');
     const financeAdminsNeeded = Math.max(0, 2 - financeAdmins.length);
     
     for (let i = 0; i < financeAdminsNeeded; i++) {
-      const financeUser = adminUsers.find(user => 
-        user.user_type.includes('FINANCE_ADMIN') && 
-        !verifiedAdmins.some(admin => admin.user_id === user.id)
-      ) || adminUsers.find(user => !verifiedAdmins.some(admin => admin.user_id === user.id));
-      
-      if (!financeUser) continue;
-
       const financeAdminData = {
-        user_id: financeUser.id,
-        role: 'FINANCE_ADMIN',
-        permissions: ['MANAGE_PAYMENTS', 'MANAGE_PROMOTIONS', 'VIEW_ANALYTICS'],
-        first_name: financeUser.first_name,
-        last_name: financeUser.last_name,
-        status: 'ACTIVE',
-        created_by_id: this.createdData.superAdmin.id,
-        assigned_restaurants: [],
-        assigned_drivers: [],
-        assigned_customer_care: []
+        email: `financeadmin_${Date.now()}_${i}@flashfood.com`,
+        password: 'Finance123!',
+        first_name: `Finance`,
+        last_name: `Admin ${i + 1}`,
+        phone: faker.phone.number()
       };
 
       try {
-        const response = await axios.post(`${this.baseURL}/admin-fake`, financeAdminData);
-        if (response.data.EC === 0) {
-          console.log(`✅ Created Finance Admin ${i + 1}: ${financeUser.first_name} ${financeUser.last_name}`);
-          this.createdData.financeAdmins.push(response.data.data);
+        console.log(`🔄 Registering Finance Admin ${i + 1}: ${financeAdminData.email}`);
+        const response = await axios.post(`${this.baseURL}/auth/register-finance-admin`, financeAdminData);
+        
+        if (response.data.EC === 0 || response.data.EC === 'OK') {
+          console.log(`✅ Registered Finance Admin ${i + 1}: ${financeAdminData.first_name} ${financeAdminData.last_name}`);
+          console.log(`🔐 Email: ${financeAdminData.email} | Password: ${financeAdminData.password}`);
+          this.adminCredentials.financeAdmins.push({
+            email: financeAdminData.email,
+            password: financeAdminData.password,
+            role: 'FINANCE_ADMIN'
+          });
         } else {
-          console.log(`❌ Failed to create Finance Admin ${i + 1}: ${response.data.EM}`);
+          console.log(`❌ Failed to register Finance Admin ${i + 1}: ${response.data.EM}`);
         }
       } catch (error) {
-        console.log(`❌ Error creating Finance Admin ${i + 1}: ${error.response?.data?.EM || error.message}`);
+        console.log(`❌ Error registering Finance Admin ${i + 1}: ${error.response?.data?.EM || error.message}`);
       }
       
-      await this.delay(300);
+      await this.delay(1000);
     }
 
     // Step 3c: Companion Admins
-    console.log('\n🤝 STEP 3c: Creating Companion Admins...');
+    console.log('\n🤝 STEP 3c: Creating Companion Admins (SIGNABLE ACCOUNTS)...');
     const currentAdmins = await this.verifyTableData('admin-fake', 'Admins', true);
     const companionAdmins = currentAdmins.filter(admin => admin.role === 'COMPANION_ADMIN');
     const companionAdminsNeeded = Math.max(0, 2 - companionAdmins.length);
     
     for (let i = 0; i < companionAdminsNeeded; i++) {
-      const companionUser = adminUsers.find(user => 
-        user.user_type.includes('COMPANION_ADMIN') && 
-        !currentAdmins.some(admin => admin.user_id === user.id)
-      ) || adminUsers.find(user => !currentAdmins.some(admin => admin.user_id === user.id));
-      
-      if (!companionUser) continue;
-
       const companionAdminData = {
-        user_id: companionUser.id,
-        role: 'COMPANION_ADMIN',
-        permissions: ['MANAGE_RESTAURANTS', 'MANAGE_DRIVERS', 'MANAGE_SUPPORT', 'VIEW_ANALYTICS'],
-        first_name: companionUser.first_name,
-        last_name: companionUser.last_name,
-        status: 'ACTIVE',
-        created_by_id: this.createdData.superAdmin.id,
-        assigned_restaurants: [],
-        assigned_drivers: [],
-        assigned_customer_care: []
+        email: `companionadmin_${Date.now()}_${i}@flashfood.com`,
+        password: 'Companion123!',
+        first_name: `Companion`,
+        last_name: `Admin ${i + 1}`,
+        phone: faker.phone.number()
       };
 
       try {
-        const response = await axios.post(`${this.baseURL}/admin-fake`, companionAdminData);
-        if (response.data.EC === 0) {
-          console.log(`✅ Created Companion Admin ${i + 1}: ${companionUser.first_name} ${companionUser.last_name}`);
-          this.createdData.companionAdmins.push(response.data.data);
+        console.log(`🔄 Registering Companion Admin ${i + 1}: ${companionAdminData.email}`);
+        const response = await axios.post(`${this.baseURL}/auth/register-companion-admin`, companionAdminData);
+        
+        if (response.data.EC === 0 || response.data.EC === 'OK') {
+          console.log(`✅ Registered Companion Admin ${i + 1}: ${companionAdminData.first_name} ${companionAdminData.last_name}`);
+          console.log(`🔐 Email: ${companionAdminData.email} | Password: ${companionAdminData.password}`);
+          this.adminCredentials.companionAdmins.push({
+            email: companionAdminData.email,
+            password: companionAdminData.password,
+            role: 'COMPANION_ADMIN'
+          });
         } else {
-          console.log(`❌ Failed to create Companion Admin ${i + 1}: ${response.data.EM}`);
+          console.log(`❌ Failed to register Companion Admin ${i + 1}: ${response.data.EM}`);
         }
       } catch (error) {
-        console.log(`❌ Error creating Companion Admin ${i + 1}: ${error.response?.data?.EM || error.message}`);
+        console.log(`❌ Error registering Companion Admin ${i + 1}: ${error.response?.data?.EM || error.message}`);
       }
       
-      await this.delay(300);
+      await this.delay(1000);
     }
 
     // Final verification
@@ -309,15 +275,238 @@ class StructuredDatabasePopulator {
     }
   }
 
-  // Step 4: Finance Rules
-  async createFinanceRules() {
-    console.log('\n💰 STEP 4: Creating Finance Rules...');
+  // Step 4: Customer Care (SIGNABLE ACCOUNTS)
+  async createCustomerCares() {
+    console.log('\n📞 STEP 4: Creating Customer Care Representatives (SIGNABLE ACCOUNTS)...');
     
-    if (!this.createdData.superAdmin) {
-      console.log('❌ CRITICAL: No Super Admin available for Finance Rules creation!');
-      process.exit(1);
+    const existing = await this.verifyTableData('customer-cares', 'Customer Cares', false);
+    if (existing.length >= 2) {
+      console.log(`📝 Already have ${existing.length} customer care representatives`);
+      this.createdData.customerCares = existing;
+      return;
     }
 
+    const needed = 3;
+    for (let i = 0; i < needed; i++) {
+      const customerCareData = {
+        email: `customercare_${Date.now()}_${i}@flashfood.com`,
+        password: 'CustomerCare123!',
+        first_name: `Customer Care`,
+        last_name: `Rep ${i + 1}`,
+        phone: faker.phone.number()
+      };
+
+      try {
+        console.log(`🔄 Registering Customer Care ${i + 1}: ${customerCareData.email}`);
+        const response = await axios.post(`${this.baseURL}/auth/register-customer-care`, customerCareData);
+        
+        if (response.data.EC === 0 || response.data.EC === 'OK') {
+          console.log(`✅ Registered Customer Care ${i + 1}: ${customerCareData.first_name} ${customerCareData.last_name}`);
+          console.log(`🔐 Email: ${customerCareData.email} | Password: ${customerCareData.password}`);
+          this.adminCredentials.customerCares.push({
+            email: customerCareData.email,
+            password: customerCareData.password,
+            role: 'CUSTOMER_CARE'
+          });
+        } else {
+          console.log(`❌ Failed to register Customer Care ${i + 1}: ${response.data.EM}`);
+        }
+      } catch (error) {
+        console.log(`❌ Error registering Customer Care ${i + 1}: ${error.response?.data?.EM || error.message}`);
+      }
+      
+      await this.delay(1000);
+    }
+
+    // Verify creation
+    await this.verifyTableData('customer-cares', 'Customer Cares', true);
+  }
+
+  // Step 5: Restaurants (using fake API)
+  async createRestaurants() {
+    console.log('\n🏪 STEP 5: Creating Restaurants (using fake API)...');
+    
+    const existing = await this.verifyTableData('restaurants-fake', 'Restaurants', false);
+    if (existing.length >= 5) {
+      console.log(`📝 Already have ${existing.length} restaurants`);
+      this.createdData.restaurants = existing;
+      return;
+    }
+
+    // Get existing users for restaurant owners
+    const users = await this.verifyTableData('users', 'Users', true);
+    const restaurantOwners = users.filter(user => 
+      user.user_type && user.user_type.includes('RESTAURANT_OWNER')
+    );
+
+    if (restaurantOwners.length === 0) {
+      console.log('⚠️ No restaurant owner users found, creating restaurants with existing users...');
+      // Use first few users as restaurant owners if no specific restaurant owners exist
+      const availableUsers = users.slice(0, 8);
+      if (availableUsers.length === 0) {
+        console.log('❌ No users found at all, skipping restaurant creation');
+        return;
+      }
+      console.log(`🔄 Using ${availableUsers.length} existing users as restaurant owners`);
+      restaurantOwners.push(...availableUsers);
+    }
+
+    const needed = Math.min(8, restaurantOwners.length);
+    console.log(`🍽️ Creating ${needed} restaurants using existing restaurant owners...`);
+
+    for (let i = 0; i < needed; i++) {
+      const owner = restaurantOwners[i];
+      const addressBook = this.createdData.addressBooks[i % this.createdData.addressBooks.length];
+      const foodCategories = this.createdData.foodCategories.slice(0, 2); // Use first 2 categories
+
+      const restaurantData = {
+        owner_id: owner.id,
+        owner_name: `${owner.first_name || 'Restaurant'} ${owner.last_name || 'Owner'}`,
+        restaurant_name: `${faker.company.name()} Restaurant`,
+        description: faker.lorem.sentences(2),
+        address_id: addressBook?.id || (this.createdData.addressBooks[0]?.id || ''),
+        contact_email: [{
+          title: 'Primary',
+          is_default: true,
+          email: owner.email || faker.internet.email()
+        }],
+        contact_phone: [{
+          title: 'Primary',
+          number: owner.phone || faker.phone.number(),
+          is_default: true
+        }],
+        avatar: {
+          url: faker.image.url(),
+          key: faker.string.uuid()
+        },
+        images_gallery: [],
+        status: {
+          is_open: faker.datatype.boolean(),
+          is_active: true,
+          is_accepted_orders: faker.datatype.boolean()
+        },
+        promotions: [],
+        opening_hours: {
+          mon: { from: 8, to: 22 },
+          tue: { from: 8, to: 22 },
+          wed: { from: 8, to: 22 },
+          thu: { from: 8, to: 22 },
+          fri: { from: 8, to: 23 },
+          sat: { from: 9, to: 23 },
+          sun: { from: 9, to: 21 }
+        },
+        ratings: {
+          average_rating: faker.number.float({ min: 3.5, max: 5.0, fractionDigits: 1 }),
+          review_count: faker.number.int({ min: 10, max: 500 })
+        },
+        food_category_ids: foodCategories.length > 0 ? foodCategories.map(cat => cat.id) : []
+      };
+
+      try {
+        const response = await axios.post(`${this.baseURL}/restaurants-fake`, restaurantData);
+        if (response.data.EC === 0 || response.data.EC === 'OK') {
+          console.log(`✅ Created restaurant ${i + 1}/${needed}: ${restaurantData.restaurant_name}`);
+          this.createdData.restaurants.push(response.data.data);
+        } else {
+          console.log(`❌ Failed to create restaurant ${i + 1}: ${response.data.EM}`);
+        }
+      } catch (error) {
+        console.log(`❌ Error creating restaurant ${i + 1}: ${error.response?.data?.EM || error.message}`);
+      }
+      
+      await this.delay(500);
+    }
+
+    // Verify creation (non-critical)
+    const finalRestaurants = await this.verifyTableData('restaurants-fake', 'Restaurants', false);
+    console.log(`✅ Final restaurants count: ${finalRestaurants.length}`);
+  }
+
+  // Step 6: Customers (using fake API)
+  async createCustomers() {
+    console.log('\n👥 STEP 6: Creating Customers (using fake API)...');
+    
+    const existing = await this.verifyTableData('customers-fake', 'Customers', false);
+    if (existing.length >= 10) {
+      console.log(`📝 Already have ${existing.length} customers`);
+      this.createdData.customers = existing;
+      return;
+    }
+
+    // Get existing users for customers
+    const users = await this.verifyTableData('users', 'Users', true);
+    const customerUsers = users.filter(user => 
+      user.user_type && user.user_type.includes('CUSTOMER')
+    );
+
+    if (customerUsers.length === 0) {
+      console.log('⚠️ No customer users found, using existing users as customers...');
+      // Use existing users as customers if no specific customer users exist
+      const availableUsers = users.slice(0, 15);
+      if (availableUsers.length === 0) {
+        console.log('❌ No users found at all, skipping customer creation');
+        return;
+      }
+      console.log(`🔄 Using ${availableUsers.length} existing users as customers`);
+      customerUsers.push(...availableUsers);
+    }
+
+    const needed = Math.min(15, customerUsers.length);
+    console.log(`👤 Creating ${needed} customers using existing customer users...`);
+
+    for (let i = 0; i < needed; i++) {
+      const user = customerUsers[i];
+      const addressBooks = this.createdData.addressBooks.slice(0, 2); // Use first 2 addresses
+      const foodCategories = this.createdData.foodCategories.slice(0, 3); // Use first 3 categories
+      const restaurants = this.createdData.restaurants.slice(0, 2); // Use first 2 restaurants
+
+      const customerData = {
+        user_id: user.id,
+        first_name: user.first_name || faker.person.firstName(),
+        last_name: user.last_name || faker.person.lastName(),
+        address: faker.location.streetAddress(),
+        avatar: {
+          url: faker.image.avatar(),
+          key: faker.string.uuid()
+        },
+        address_ids: addressBooks.length > 0 ? addressBooks.map(addr => addr.id) : [],
+        preferred_category_ids: foodCategories.length > 0 ? foodCategories.map(cat => cat.id) : [],
+        favorite_restaurant_ids: restaurants.length > 0 ? restaurants.map(rest => rest.id) : [],
+        favorite_items: [],
+        support_tickets: [],
+        app_preferences: {
+          theme: faker.helpers.arrayElement(['light', 'dark'])
+        },
+        restaurant_history: restaurants.length > 0 ? restaurants.map(rest => ({
+          restaurant_id: rest.id,
+          count: faker.number.int({ min: 1, max: 10 })
+        })) : []
+      };
+
+      try {
+        const response = await axios.post(`${this.baseURL}/customers-fake`, customerData);
+        if (response.data.EC === 0 || response.data.EC === 'OK') {
+          console.log(`✅ Created customer ${i + 1}/${needed}: ${customerData.first_name} ${customerData.last_name}`);
+          this.createdData.customers.push(response.data.data);
+        } else {
+          console.log(`❌ Failed to create customer ${i + 1}: ${response.data.EM}`);
+        }
+      } catch (error) {
+        console.log(`❌ Error creating customer ${i + 1}: ${error.response?.data?.EM || error.message}`);
+      }
+      
+      await this.delay(300);
+    }
+
+    // Verify creation (non-critical)
+    const finalCustomers = await this.verifyTableData('customers-fake', 'Customers', false);
+    console.log(`✅ Final customers count: ${finalCustomers.length}`);
+  }
+
+  // Step 7: Finance Rules
+  async createFinanceRules() {
+    console.log('\n💰 STEP 7: Creating Finance Rules...');
+    
     const existing = await this.verifyTableData('finance-rules', 'Finance Rules', false);
     if (existing.length >= 2) {
       console.log(`📝 Already have ${existing.length} finance rules`);
@@ -338,7 +527,6 @@ class StructuredDatabasePopulator {
         customer_care_hourly_wage: 50000,
         app_service_fee: 0.15,
         restaurant_commission: 0.20,
-        created_by_id: this.createdData.superAdmin.id,
         description: `Finance Rule Set ${i + 1} - Standard rates`
       };
 
@@ -361,19 +549,120 @@ class StructuredDatabasePopulator {
     await this.verifyTableData('finance-rules', 'Finance Rules', true);
   }
 
+  // Test sign-in capabilities
+  async testSignInAccounts() {
+    console.log('\n🔐 TESTING SIGN-IN CAPABILITIES...');
+    
+    // Test Super Admin login
+    if (this.adminCredentials.superAdmin) {
+      try {
+        console.log(`🧪 Testing Super Admin login...`);
+        const response = await axios.post(`${this.baseURL}/auth/login-super-admin`, {
+          email: this.adminCredentials.superAdmin.email,
+          password: this.adminCredentials.superAdmin.password
+        });
+        
+        if (response.data.EC === 0 || response.data.EC === 'OK') {
+          console.log(`✅ Super Admin can sign in successfully!`);
+          console.log(`🎫 Access token generated: ${response.data.data.access_token ? 'YES' : 'NO'}`);
+        } else {
+          console.log(`❌ Super Admin sign-in failed: ${response.data.EM}`);
+        }
+      } catch (error) {
+        console.log(`❌ Super Admin sign-in error: ${error.response?.data?.EM || error.message}`);
+      }
+    }
+
+    // Test Customer Care login
+    if (this.adminCredentials.customerCares.length > 0) {
+      try {
+        const customerCare = this.adminCredentials.customerCares[0];
+        console.log(`🧪 Testing Customer Care login...`);
+        const response = await axios.post(`${this.baseURL}/auth/login-customer-care`, {
+          email: customerCare.email,
+          password: customerCare.password
+        });
+        
+        if (response.data.EC === 0 || response.data.EC === 'OK') {
+          console.log(`✅ Customer Care can sign in successfully!`);
+          console.log(`🎫 Access token generated: ${response.data.data.access_token ? 'YES' : 'NO'}`);
+        } else {
+          console.log(`❌ Customer Care sign-in failed: ${response.data.EM}`);
+        }
+      } catch (error) {
+        console.log(`❌ Customer Care sign-in error: ${error.response?.data?.EM || error.message}`);
+      }
+    }
+  }
+
+  // Print all credentials
+  async printCredentials() {
+    console.log('\n🔐 ================ SIGN-IN CREDENTIALS ================');
+    console.log('📋 Use these accounts to sign in to your frontend:');
+    console.log('');
+    
+    if (this.adminCredentials.superAdmin) {
+      console.log('👑 SUPER ADMIN:');
+      console.log(`   Email: ${this.adminCredentials.superAdmin.email}`);
+      console.log(`   Password: ${this.adminCredentials.superAdmin.password}`);
+      console.log(`   Endpoint: POST /auth/login-super-admin`);
+      console.log('');
+    }
+
+    if (this.adminCredentials.financeAdmins.length > 0) {
+      console.log('💰 FINANCE ADMINS:');
+      this.adminCredentials.financeAdmins.forEach((admin, i) => {
+        console.log(`   ${i + 1}. Email: ${admin.email}`);
+        console.log(`      Password: ${admin.password}`);
+        console.log(`      Endpoint: POST /auth/login-finance-admin`);
+      });
+      console.log('');
+    }
+
+    if (this.adminCredentials.companionAdmins.length > 0) {
+      console.log('🤝 COMPANION ADMINS:');
+      this.adminCredentials.companionAdmins.forEach((admin, i) => {
+        console.log(`   ${i + 1}. Email: ${admin.email}`);
+        console.log(`      Password: ${admin.password}`);
+        console.log(`      Endpoint: POST /auth/login-companion-admin`);
+      });
+      console.log('');
+    }
+
+    if (this.adminCredentials.customerCares.length > 0) {
+      console.log('📞 CUSTOMER CARE REPS:');
+      this.adminCredentials.customerCares.forEach((care, i) => {
+        console.log(`   ${i + 1}. Email: ${care.email}`);
+        console.log(`      Password: ${care.password}`);
+        console.log(`      Endpoint: POST /auth/login-customer-care`);
+      });
+      console.log('');
+    }
+    
+    console.log('====================================================');
+  }
+
   async populateDatabase() {
-    console.log('🚀 Starting STRUCTURED Database Population...');
-    console.log('📋 Order: Address Books → Food Categories → Admin Hierarchy → Finance Rules → ...');
-    console.log('⚠️  Will STOP immediately if any step fails!\n');
+    console.log('🚀 Starting STRUCTURED Database Population with SIGNABLE ACCOUNTS...');
+    console.log('📋 Order: Address Books → Food Categories → Admin Hierarchy → Customer Care → Restaurants → Customers → Finance Rules');
+    console.log('⚠️  Will STOP immediately if any step fails!');
+    console.log('🔐 Creating accounts you can ACTUALLY SIGN IN with!\n');
 
     try {
       await this.createAddressBooks();
       await this.createFoodCategories();
       await this.createAdminHierarchy();
+      await this.createCustomerCares();
+      await this.createRestaurants();
+      await this.createCustomers();
       await this.createFinanceRules();
       
-      console.log('\n🎉 Phase 1 Complete! All critical tables populated.');
-      console.log('📊 Ready for next phase: Restaurants → Menu Items → Promotions → Drivers → Customers → Customer Care → Orders');
+      console.log('\n🎉 Phase 1 Complete! All critical tables populated with SIGNABLE ACCOUNTS!');
+      
+      await this.testSignInAccounts();
+      await this.printCredentials();
+      
+      console.log('\n🎊 SUCCESS! You now have accounts that can sign in to manage your frontend!');
       
     } catch (error) {
       console.error('\n❌ POPULATION FAILED:', error.message);

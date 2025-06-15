@@ -597,4 +597,77 @@ export class AdminChartService {
       return 0;
     }
   }
+
+  // Direct database insertion methods for fake data
+  async insertFakeChartData(chartData: any): Promise<void> {
+    try {
+      console.log('Inserting fake chart data directly into database...');
+
+      // Delete existing record for the same period first
+      await this.deletePeriodData(
+        chartData.period_start,
+        chartData.period_end,
+        chartData.period_type
+      );
+
+      // Create and save the new chart record
+      const newRecord = this.adminChartRepo.create({
+        id: chartData.id,
+        period_type: chartData.period_type,
+        period_start: chartData.period_start,
+        period_end: chartData.period_end,
+        total_users: chartData.total_users,
+        sold_promotions: chartData.sold_promotions,
+        net_income: chartData.net_income,
+        gross_income: chartData.gross_income,
+        order_stats: chartData.order_stats,
+        user_growth_rate: chartData.user_growth_rate,
+        gross_from_promotion: chartData.gross_from_promotion,
+        average_customer_satisfaction: chartData.average_customer_satisfaction,
+        average_delivery_time: chartData.average_delivery_time,
+        order_cancellation_rate: chartData.order_cancellation_rate,
+        order_volume: chartData.order_volume,
+        churn_rate: chartData.churn_rate,
+        created_at: new Date(chartData.created_at),
+        updated_at: new Date(chartData.updated_at)
+      });
+
+      await this.adminChartRepo.save(newRecord);
+      console.log(
+        `Fake chart data inserted successfully with ID: ${chartData.id}`
+      );
+
+      // Clear cache for this period to force refresh
+      const cacheKey = `admin_chart_${chartData.period_start}_${chartData.period_end}_${chartData.period_type}`;
+      await this.setCachedData(cacheKey, null, 1); // Set to expire immediately
+    } catch (error) {
+      console.error('Error inserting fake chart data:', error);
+      throw new Error('Failed to insert fake chart data into database');
+    }
+  }
+
+  async deletePeriodData(
+    periodStart: number,
+    periodEnd: number,
+    periodType: string
+  ): Promise<void> {
+    try {
+      await this.adminChartRepo.delete({
+        period_start: periodStart,
+        period_end: periodEnd,
+        period_type: periodType
+      });
+
+      // Clear cache
+      const cacheKey = `admin_chart_${periodStart}_${periodEnd}_${periodType}`;
+      await this.setCachedData(cacheKey, null, 1); // Set to expire immediately
+
+      console.log(
+        `Deleted existing chart data for period ${periodStart} - ${periodEnd}`
+      );
+    } catch (error) {
+      console.error('Error deleting period data:', error);
+      // Don't throw error as this is a cleanup operation
+    }
+  }
 }

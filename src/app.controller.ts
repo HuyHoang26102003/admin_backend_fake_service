@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Post, Body } from '@nestjs/common';
 import { AppService } from './app.service';
 
 @Controller()
@@ -33,5 +33,10 @@ export class AppController {
       uptime: process.uptime(),
       timestamp: new Date().toISOString()
     };
+  }
+
+  @Post('direct-db-insert/admin-chart')
+  async insertAdminChartData(@Body() chartData: any) {
+    return this.appService.insertAdminChartDirectly(chartData);
   }
 }

@@ -41,16 +41,18 @@ export class HttpExceptionFilter implements ExceptionFilter {
       message: string | string[];
     };
 
+    // Xử lý validation errors từ ValidationPipe
     if (Array.isArray(errorResponse.message)) {
       const messages = errorResponse.message;
       const apiResponse = createResponse(
         'InvalidFormatInput',
         messages,
-        'validate errors'
+        'Please validate inputs with these errors'
       );
       return response.status(200).json(apiResponse);
     }
 
+    // Xử lý các BadRequestException khác
     const message =
       typeof errorResponse === 'string'
         ? errorResponse
